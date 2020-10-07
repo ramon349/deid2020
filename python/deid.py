@@ -1,19 +1,23 @@
 import re
 import sys
 import numpy as np 
-#phone_pattern ='(\d{3}[-\.\s/]??\d{3}[-\.\s/]??\d{4}|\(\d{3}\)\s*\d{3}[-\.\s/]??\d{4})'
+
 age_pattern = r'\b\d\d\b'
-# compiling the reg_ex would save sime time!
 age_reg  = re.compile(age_pattern)
-age_hint= r'(year|old|yo)'
+age_hint= r'(year|old|yo|y\.o)'
 age_hint_reg = re.compile(age_hint,flags=re.IGNORECASE)
 from nltk.tokenize import sent_tokenize 
 
 
-def is_close(age_candi,age_hint): 
-    age_end = age_candi.span()[1]
+def is_close(age_candidate,age_hint): 
+    """  We have age_candidate matches. We will verify are truly patient ages by mesuring
+    how close they are to age words such as year, old, "year old" and so forth. 
+
+    """
+    distance_threshold = 6
+    age_end = age_candidate.span()[1]
     hint_start = age_hint.span()[1]
-    if  np.abs(age_end - hint_start) <= 6: 
+    if  np.abs(age_end - hint_start) <= distance_threshold: 
         return True
     else: 
         return False
@@ -21,27 +25,21 @@ def is_close(age_candi,age_hint):
 
 ## our goal here would be to tokenize words and see the inclusion of certain key words
 def search_lines(chunk): 
-    #other_chunk = re.sub('START_OF_RECORD=\d\d?\|\|\|\|\d\d?\|\|\|\|\\nO:',"",chunk)
-    #chunk = other_chunk.lstrip()
-    #chunk = chunk.replace("\n","")
     outputs = list()  
     match = list(age_reg.finditer(chunk) )
     exist = list(age_hint_reg.finditer(chunk) ) 
     offset = 29
-    #breakpoint() 
     if match and len(exist) >0 : 
         for k in match:  
             closeness = [is_close(k,w) for w in exist ]
             if not np.any(closeness) :
                 continue
             a,b = k.span() 
+            print(chunk[a-30:b+30] )
             start=  k.start() -  offset 
             end =  k.end()  - offset
             result = str(start) + ' ' + str(start)  +' '+ str(end) 
-            #print(result)
-            #print(k)
             outputs.append(result)
-    print('---end---')
     return outputs
 def check_for_age(patient,note,chunk, output_handle):
     """
@@ -54,38 +52,32 @@ def check_for_age(patient,note,chunk, output_handle):
             during the de-identification process, the file is opened beforehand and the handle is passed
             to this function. 
     Logic:
-        Search the entire chunk for phone number occurances. Find the location of these occurances 
-        relative to the start of the chunk, and output these to the output_handle file. 
-        If there are no occurances, only output Patient X Note Y (X and Y are passed in as inputs) in one line.
-        Use the precompiled regular expression to find phones.
+        We apply 2 searches on the provided input chunk. 1 for potential age numbers as noted by 2  digits
+        Our second search is for words that are age related such as "year old,y.o " see age_hint var 
+        for more. For all the age matches we only write the ones that are 6 characters away form an 
+        age_hint match. 
     """
-    # The perl code handles texts a bit differently, 
-    # we found that adding this offset to start and end positions would produce the same results
-    offset = 31
-
-    # For each new note, the first line should be Patient X Note Y and then all the personal information positions
     output_handle.write('Patient {}\tNote {}\n'.format(patient,note))
-
-    # search the whole chunk, and find every position that matches the regular expression
-    # for each one write the results: "Start Start END"
-    # Also for debugging purposes display on the screen (and don't write to file) 
-    # the start, end and the actual personal information that we found
-    outputs = search_lines(chunk) 
-    for e in outputs: 
-        output_handle.write(e+'\n')
-    """
-    for match in age_reg.finditer(chunk):
-            # debug print, 'end=" "' stops print() from adding a new line 
-            print(patient, note,end=' ')
-            print((match.start()-offset),match.end()-offset, match.group())
-            # create the string that we want to write to file ('start start end')    
-            result = str(match.start()-offset) + ' ' + str(match.start()-offset) +' '+ str(match.end()-offset) 
-            # write the result to one line of output
+    outputs = list()  
+    age_candidates = list(age_reg.finditer(chunk) )
+    age_hints = list(age_hint_reg.finditer(chunk) ) 
+    offset = 29 # index offset for compatibility with perl scripts 
+    if age_candidates and len(age_hints) >0 : 
+        for k in age_candidates:  
+            closeness = [is_close(k,hint) for hint in age_hints ]
+            #if there are no close age terms we skip 
+            if not np.any(closeness) :
+                continue
+            #these 2 lines are to show what labeled positive classes are 
+            #a,b = k.span() 
+            #print(chunk[a-30:b+30] )
+            start=  k.start() -  offset 
+            end =  k.end()  - offset
+            result = str(start) + ' ' + str(start)  +' '+ str(end) 
             output_handle.write(result+'\n')
-    """ 
             
             
-def deid_phone(text_path= 'id.text', output_path = 'phone.phi'):
+def deid_age(text_path= 'id.text', output_path = 'phone.phi'):
     """
     Inputs: 
         - text_path: path to the file containing patient records
@@ -94,19 +86,12 @@ def deid_phone(text_path= 'id.text', output_path = 'phone.phi'):
     Outputs:
         for each patient note, the output file will start by a line declaring the note in the format of:
             Patient X Note Y
-        then for each phone number found, it will have another line in the format of:
+        then for each age  found, it will have another line in the format of:
             start start end
-        where the start is the start position of the detected phone number string, and end is the detected
+        where the start is the start position of the detected age string, and end is the detected
         end position of the string both relative to the start of the patient note.
-        If there is no phone number detected in the patient note, only the first line (Patient X Note Y) is printed
+        If there is no age detected in the patient note, only the first line (Patient X Note Y) is printed
         to the output
-    Screen Display:
-        For each phone number detected, the following information will be displayed on the screen for debugging purposes 
-        (these will not be written to the output file):
-            start end phone_number
-        where `start` is the start position of the detected phone number string, and `end` is the detected end position of the string
-        both relative to the start of patient note.
-    
     """
     # start of each note has the patter: START_OF_RECORD=PATIENT||||NOTE||||
     # where PATIENT is the patient number and NOTE is the note number.
@@ -134,19 +119,11 @@ def deid_phone(text_path= 'id.text', output_path = 'phone.phi'):
                 if len(record_end) :
                     # Now we have a full patient note stored in `chunk`, along with patient numerb and note number
                     # pass all to check_for_phone to find any phone numbers in note.
-                    #if int(patient) == 153:
-                    #   breakpoint()  
                     print(f"----Start patient: {patient}----")
                     check_for_age(patient,note,chunk.strip(), output_file)
                     counter = counter + 1  
-                    record_end =[] 
-                    
                     # initialize the chunk for the next note to be read
                     chunk = ''
                 
 if __name__== "__main__":
-        
-    
-    
-    deid_phone(sys.argv[1], sys.argv[2])
-    
+    deid_age(sys.argv[1], sys.argv[2])
