@@ -77,7 +77,7 @@ def check_for_age(patient,note,chunk, output_handle):
             output_handle.write(result+'\n')
             
             
-def deid_age(text_path= 'id.text', output_path = 'phone.phi'):
+def deid_age(text_path= 'id.text', output_path = 'age.phi'):
     """
     Inputs: 
         - text_path: path to the file containing patient records
@@ -119,7 +119,6 @@ def deid_age(text_path= 'id.text', output_path = 'phone.phi'):
                 if len(record_end) :
                     # Now we have a full patient note stored in `chunk`, along with patient numerb and note number
                     # pass all to check_for_phone to find any phone numbers in note.
-                    print(f"----Start patient: {patient}----")
                     check_for_age(patient,note,chunk.strip(), output_file)
                     counter = counter + 1  
                     # initialize the chunk for the next note to be read
